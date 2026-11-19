@@ -1,0 +1,6 @@
+{
+  "name": "Rover Terminal Dashboard",
+  "description": "Linux/Windows terminal-styled ESP32-S3 rover dashboard with ESP32-CAM stream, 0-100 PWM control, WASD drive, Xbox gamepad telemetry, and light/dark themes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,1601 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rover Terminal Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg-canvas: #030604;
+        --panel-bg: rgba(5, 10, 7, 0.92);
+        --panel-border: rgba(22, 101, 52, 0.78);
+        --panel-divider: rgba(22, 101, 52, 0.45);
+        --slot-bg: rgba(7, 14, 10, 0.94);
+        --slot-border: rgba(21, 128, 61, 0.45);
+        --white: #f8fafc;
+        --muted: #86a392;
+        --dim: #4b6b58;
+        --green-dark: #052e16;
+        --green-mid: #14532d;
+        --green-bright: #22c55e;
+        --green-phosphor: #4ade80;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: transparent;
+        color: var(--white);
+        font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-variant-numeric: tabular-nums;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+      body.dark-backdrop {
+        background: var(--bg-canvas);
+      }
+
+      .hud-shell {
+        width: 100vw;
+        height: 100dvh;
+        padding: clamp(8px, 1.1vw, 14px);
+        display: flex;
+        flex-direction: column;
+        gap: clamp(8px, 1vh, 12px);
+        overflow: hidden;
+      }
+
+      .terminal-panel {
+        background: var(--panel-bg);
+        border: 1px solid var(--panel-border);
+        border-radius: 6px;
+        box-shadow: 0 0 0 1px rgba(20, 83, 45, 0.25), 0 10px 28px rgba(0, 0, 0, 0.65);
+      }
+
+      /* Top Row takes all remaining height so ESP32-CAM and Terminal are big and clear */
+      .top-row {
+        flex: 1;
+        min-height: 0;
+        display: grid;
+        grid-template-columns: minmax(0, 1.55fr) minmax(300px, 1fr);
+        gap: clamp(8px, 1.1vw, 14px);
+      }
+
+      .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--muted);
+        border-bottom: 1px solid var(--panel-divider);
+        padding-bottom: 6px;
+      }
+
+      .panel-title {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        color: var(--white);
+        font-size: 12px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .status-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: var(--dim);
+        flex-shrink: 0;
+      }
+
+      .status-dot.on {
+        background: var(--green-phosphor);
+        box-shadow: 0 0 8px var(--green-bright);
+      }
+
+      .btn-row {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        flex-wrap: wrap;
+      }
+
+      .term-btn {
+        background: var(--slot-bg);
+        border: 1px solid var(--slot-border);
+        color: var(--muted);
+        font-family: inherit;
+        font-size: 10px;
+        font-weight: 600;
+        padding: 3px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: border-color 100ms ease, color 100ms ease, background-color 100ms ease;
+      }
+
+      .term-btn:hover {
+        color: var(--white);
+        border-color: var(--green-phosphor);
+      }
+
+      .term-btn.active {
+        background: var(--green-mid);
+        border-color: var(--green-phosphor);
+        color: var(--white);
+      }
+
+      /* Large ESP32-CAM Panel */
+      .camera-card {
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        min-height: 0;
+      }
+
+      .camera-viewport {
+        position: relative;
+        flex: 1;
+        min-height: 0;
+        width: 100%;
+        border-radius: 4px;
+        overflow: hidden;
+        background: #020403;
+        border: 1px solid var(--slot-border);
+      }
+
+      .camera-viewport video,
+      .camera-viewport img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: none;
+        background: #020403;
+      }
+
+      .camera-viewport.has-video video,
+      .camera-viewport.has-image img {
+        display: block;
+      }
+
+      .camera-viewport.mirrored video,
+      .camera-viewport.mirrored img {
+        transform: scaleX(-1);
+      }
+
+      .camera-placeholder {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 12px;
+        text-align: center;
+        padding: 16px;
+      }
+
+      .camera-viewport.has-video .camera-placeholder,
+      .camera-viewport.has-image .camera-placeholder {
+        display: none;
+      }
+
+      .camera-crosshair {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        display: none;
+      }
+
+      .camera-viewport.show-crosshair .camera-crosshair {
+        display: block;
+      }
+
+      .camera-crosshair::before,
+      .camera-crosshair::after {
+        content: '';
+        position: absolute;
+        background: rgba(74, 222, 128, 0.25);
+      }
+
+      .camera-crosshair::before {
+        left: 50%;
+        top: 15%;
+        bottom: 15%;
+        width: 1px;
+      }
+
+      .camera-crosshair::after {
+        top: 50%;
+        left: 20%;
+        right: 20%;
+        height: 1px;
+      }
+
+      .cam-hud-overlay {
+        position: absolute;
+        left: 10px;
+        right: 10px;
+        bottom: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        pointer-events: none;
+        font-size: 11px;
+        color: var(--white);
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+      }
+
+      .cam-corner-tl,
+      .cam-corner-br {
+        position: absolute;
+        width: 14px;
+        height: 14px;
+        pointer-events: none;
+      }
+
+      .cam-corner-tl {
+        top: 8px;
+        left: 8px;
+        border-top: 2px solid var(--green-phosphor);
+        border-left: 2px solid var(--green-phosphor);
+      }
+
+      .cam-corner-br {
+        bottom: 8px;
+        right: 8px;
+        border-bottom: 2px solid var(--white);
+        border-right: 2px solid var(--white);
+      }
+
+      .url-drawer {
+        position: absolute;
+        inset: 0;
+        background: rgba(3, 6, 4, 0.95);
+        display: none;
+        flex-direction: column;
+        justify-content: center;
+        gap: 10px;
+        padding: 20px;
+        z-index: 5;
+      }
+
+      .url-drawer.open {
+        display: flex;
+      }
+
+      .url-input {
+        width: 100%;
+        background: #020403;
+        border: 1px solid var(--green-phosphor);
+        border-radius: 4px;
+        padding: 8px 10px;
+        color: var(--white);
+        font-family: inherit;
+        font-size: 12px;
+        outline: none;
+      }
+
+      /* Top-Right: Motor & Servo Terminal */
+      .terminal-card {
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        min-height: 0;
+      }
+
+      .motor-metrics {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+      }
+
+      .metric-cell {
+        background: var(--slot-bg);
+        border: 1px solid var(--slot-border);
+        border-radius: 4px;
+        padding: 6px 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+
+      .metric-lbl {
+        font-size: 10px;
+        color: var(--muted);
+      }
+
+      .metric-num {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--white);
+      }
+
+      .metric-num.green {
+        color: var(--green-phosphor);
+      }
+
+      .terminal-screen {
+        flex: 1;
+        min-height: 0;
+        background: #020403;
+        border: 1px solid var(--slot-border);
+        border-radius: 4px;
+        padding: 8px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        overflow: hidden;
+      }
+
+      .terminal-live-line {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--green-phosphor);
+        border-bottom: 1px solid rgba(22, 101, 52, 0.4);
+        padding-bottom: 5px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .terminal-log {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        font-size: 11px;
+        line-height: 1.35;
+        color: var(--white);
+      }
+
+      .log-entry {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: #d1fae5;
+      }
+
+      .log-entry .ts {
+        color: var(--dim);
+      }
+
+      /* Bottom Row: WASD + Xbox Gamepad */
+      .bottom-row {
+        display: flex;
+        align-items: stretch;
+        justify-content: space-between;
+        gap: clamp(8px, 1.1vw, 14px);
+        flex-shrink: 0;
+      }
+
+      /* WASD Drive Panel */
+      .wasd-card {
+        padding: 10px 12px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 8px;
+        flex-shrink: 0;
+      }
+
+      .wasd-grid {
+        display: grid;
+        grid-template-columns: repeat(3, clamp(42px, 3.6vw, 50px));
+        grid-template-rows: repeat(2, clamp(42px, 3.6vw, 50px));
+        gap: 6px;
+        justify-content: center;
+      }
+
+      .keycap {
+        background: var(--slot-bg);
+        border: 1px solid var(--slot-border);
+        border-radius: 4px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1px;
+        cursor: pointer;
+        color: var(--white);
+        font-family: inherit;
+        transition: transform 70ms cubic-bezier(0.16, 1, 0.3, 1),
+          background-color 70ms ease,
+          border-color 70ms ease,
+          color 70ms ease,
+          box-shadow 70ms ease;
+      }
+
+      .keycap:hover {
+        border-color: var(--green-phosphor);
+      }
+
+      .keycap-letter {
+        font-size: 15px;
+        font-weight: 700;
+        line-height: 1;
+      }
+
+      .keycap-sub {
+        font-size: 9px;
+        color: var(--muted);
+        line-height: 1;
+      }
+
+      .keycap.active-green {
+        background: var(--green-mid);
+        border-color: var(--green-phosphor);
+        color: var(--white);
+        box-shadow: 0 0 14px rgba(34, 197, 94, 0.38);
+        transform: translateY(1px) scale(0.96);
+      }
+
+      .keycap.active-green .keycap-sub {
+        color: #dcfce7;
+      }
+
+      .keycap.active-white {
+        background: var(--white);
+        border-color: var(--white);
+        color: #030604;
+        box-shadow: 0 0 14px rgba(248, 250, 252, 0.32);
+        transform: translateY(1px) scale(0.96);
+      }
+
+      .keycap.active-white .keycap-sub {
+        color: #14532d;
+      }
+
+      /* Gamepad Telemetry Panel */
+      .gamepad-card {
+        padding: 10px 12px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 8px;
+        flex: 1;
+        min-width: 0;
+      }
+
+      .gamepad-deck {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: clamp(10px, 1.4vw, 20px);
+      }
+
+      .deck-divider {
+        width: 1px;
+        align-self: stretch;
+        background: var(--panel-divider);
+        flex-shrink: 0;
+      }
+
+      /* Triggers LT / RT */
+      .triggers-col {
+        display: flex;
+        align-items: flex-end;
+        gap: 10px;
+        flex-shrink: 0;
+      }
+
+      .trigger-unit {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        cursor: pointer;
+      }
+
+      .trigger-label {
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--white);
+      }
+
+      .trigger-meter {
+        width: 26px;
+        height: clamp(66px, 8.5vh, 84px);
+        background: var(--slot-bg);
+        border: 1px solid var(--slot-border);
+        border-radius: 4px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .trigger-fill {
+        position: absolute;
+        inset: 0;
+        transform-origin: bottom center;
+        transform: scaleY(0);
+      }
+
+      .trigger-fill.lt {
+        background: linear-gradient(0deg, #475569, #f8fafc);
+      }
+
+      .trigger-fill.rt {
+        background: linear-gradient(0deg, #14532d, #4ade80);
+      }
+
+      .trigger-val {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--white);
+      }
+
+      .trigger-tag {
+        font-size: 9px;
+        color: var(--muted);
+      }
+
+      /* L STICK (matches reference screenshot) */
+      .stick-module {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        flex-shrink: 0;
+      }
+
+      .stick-top {
+        display: flex;
+        align-items: center;
+        gap: clamp(8px, 1vw, 14px);
+      }
+
+      .stick-axes-col {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        min-width: 82px;
+      }
+
+      .stick-title {
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--green-phosphor);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+      }
+
+      .axis-row {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+
+      .axis-bar-shell {
+        width: 5px;
+        height: 28px;
+        border-radius: 2px;
+        background: #0a160f;
+        border: 1px solid rgba(22, 101, 52, 0.45);
+        position: relative;
+        overflow: hidden;
+        flex-shrink: 0;
+      }
+
+      .axis-bar-fill {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 50%;
+        height: 50%;
+        background: var(--green-phosphor);
+        transform-origin: top center;
+      }
+
+      .axis-readout {
+        display: flex;
+        flex-direction: column;
+        line-height: 1.15;
+      }
+
+      .axis-name {
+        font-size: 9px;
+        font-weight: 600;
+        color: var(--muted);
+      }
+
+      .axis-num {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--white);
+      }
+
+      .stick-reticle {
+        width: clamp(74px, 8.6vh, 92px);
+        height: clamp(74px, 8.6vh, 92px);
+        border-radius: 999px;
+        border: 1px solid rgba(74, 222, 128, 0.45);
+        background: #020503;
+        position: relative;
+        cursor: crosshair;
+        touch-action: none;
+        flex-shrink: 0;
+      }
+
+      .reticle-axis-x,
+      .reticle-axis-y {
+        position: absolute;
+        background: rgba(74, 222, 128, 0.22);
+        pointer-events: none;
+      }
+
+      .reticle-axis-x {
+        left: 0;
+        right: 0;
+        top: 50%;
+        height: 1px;
+      }
+
+      .reticle-axis-y {
+        top: 0;
+        bottom: 0;
+        left: 50%;
+        width: 1px;
+      }
+
+      .stick-dot {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 10px;
+        height: 10px;
+        margin-left: -5px;
+        margin-top: -5px;
+        border-radius: 999px;
+        background: var(--green-phosphor);
+        border: 1.5px solid var(--white);
+        box-shadow: 0 0 10px var(--green-bright);
+        pointer-events: none;
+        transform: translate3d(0, 0, 0);
+      }
+
+      .stick-foot {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 10px;
+        color: var(--muted);
+      }
+
+      .steer-track {
+        flex: 1;
+        height: 6px;
+        border-radius: 999px;
+        background: #0a160f;
+        border: 1px solid rgba(22, 101, 52, 0.45);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .steer-center-line {
+        position: absolute;
+        left: 50%;
+        top: 0;
+        bottom: 0;
+        width: 1px;
+        background: rgba(248, 250, 252, 0.45);
+        z-index: 2;
+      }
+
+      .steer-indicator {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 50%;
+        width: 10px;
+        margin-left: -5px;
+        border-radius: 999px;
+        background: var(--green-phosphor);
+        transform: translate3d(0, 0, 0);
+      }
+
+      /* D-PAD for Sideways Camera Servo */
+      .dpad-module {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        flex-shrink: 0;
+      }
+
+      .dpad-top {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .dpad-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 28px);
+        grid-template-rows: repeat(3, 28px);
+        gap: 3px;
+      }
+
+      .dpad-btn {
+        background: var(--slot-bg);
+        border: 1px solid var(--slot-border);
+        border-radius: 4px;
+        color: var(--white);
+        font-family: inherit;
+        font-size: 11px;
+        font-weight: 700;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background-color 70ms ease, border-color 70ms ease, transform 70ms ease;
+      }
+
+      .dpad-btn:hover {
+        border-color: var(--green-phosphor);
+      }
+
+      .dpad-btn.active {
+        background: var(--green-mid);
+        border-color: var(--green-phosphor);
+        color: var(--white);
+        box-shadow: 0 0 12px rgba(34, 197, 94, 0.4);
+        transform: scale(0.94);
+      }
+
+      .dpad-up { grid-column: 2; grid-row: 1; }
+      .dpad-left { grid-column: 1; grid-row: 2; }
+      .dpad-center {
+        grid-column: 2;
+        grid-row: 2;
+        font-size: 9px;
+        color: var(--muted);
+      }
+      .dpad-right { grid-column: 3; grid-row: 2; }
+      .dpad-down { grid-column: 2; grid-row: 3; }
+
+      .servo-info {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 94px;
+      }
+
+      /* XYAB Face Buttons */
+      .abxy-pad {
+        display: grid;
+        grid-template-columns: repeat(3, 32px);
+        grid-template-rows: repeat(3, 32px);
+        gap: 4px;
+        align-items: center;
+        justify-items: center;
+        flex-shrink: 0;
+      }
+
+      .face-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 999px;
+        background: var(--slot-bg);
+        border: 1px solid var(--slot-border);
+        font-family: inherit;
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--white);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: transform 70ms ease, background-color 70ms ease, border-color 70ms ease, color 70ms ease;
+      }
+
+      .face-btn[data-btn="Y"] { grid-column: 2; grid-row: 1; color: var(--white); }
+      .face-btn[data-btn="X"] { grid-column: 1; grid-row: 2; color: var(--green-phosphor); }
+      .face-btn[data-btn="B"] { grid-column: 3; grid-row: 2; color: var(--white); }
+      .face-btn[data-btn="A"] { grid-column: 2; grid-row: 3; color: var(--green-phosphor); }
+
+      .face-btn.active-green {
+        background: var(--green-mid);
+        border-color: var(--green-phosphor);
+        color: var(--white);
+        box-shadow: 0 0 12px rgba(34, 197, 94, 0.45);
+        transform: scale(0.93);
+      }
+
+      .face-btn.active-white {
+        background: var(--white);
+        border-color: var(--white);
+        color: #030604;
+        box-shadow: 0 0 12px rgba(248, 250, 252, 0.35);
+        transform: scale(0.93);
+      }
+
+      @media (max-width: 1080px) {
+        .top-row {
+          grid-template-columns: 1.25fr 1fr;
+        }
+        .gamepad-deck {
+          gap: 8px;
+        }
+        .stick-axes-col {
+          min-width: 72px;
+        }
+      }
+
+      @media (max-width: 880px) {
+        .top-row {
+          grid-template-columns: 1fr;
+          grid-template-rows: 1.3fr 1fr;
+        }
+        .bottom-row {
+          flex-wrap: wrap;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .keycap,
+        .face-btn,
+        .dpad-btn,
+        .term-btn {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body class="dark-backdrop">
+    <div class="hud-shell">
+      <!-- Top Row: Large ESP32-CAM Feed (Left) + Rover Motor/Servo Terminal (Right) -->
+      <div class="top-row">
+        <section class="terminal-panel camera-card" aria-label="ESP32-CAM Feed">
+          <div class="panel-head">
+            <div class="panel-title">
+              <span id="camDot" class="status-dot"></span>
+              <span>ESP32-CAM // LIVE FEED</span>
+            </div>
+            <div class="btn-row">
+              <button type="button" id="btnCamUrl" class="term-btn">ESP32 URL</button>
+              <button type="button" id="btnWebcam" class="term-btn">Webcam</button>
+              <button type="button" id="btnCamGrid" class="term-btn active">Reticle</button>
+              <button type="button" id="btnCamMirror" class="term-btn">Mirror</button>
+            </div>
+          </div>
+
+          <div id="camViewport" class="camera-viewport show-crosshair">
+            <video id="camVideo" autoplay playsinline muted></video>
+            <img id="camImg" alt="ESP32-CAM Rover Video Stream" />
+            <div class="camera-placeholder">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
+                <circle cx="12" cy="13" r="3" />
+              </svg>
+              <span id="camStatusText">ESP32-CAM STANDBY · CLICK "ESP32 URL" OR "WEBCAM"</span>
+              <span style="font-size: 10px; color: var(--dim);">Default ESP32 MJPEG endpoint: http://192.168.x.x:81/stream</span>
+            </div>
+            <div class="camera-crosshair"></div>
+            <div class="cam-corner-tl"></div>
+            <div class="cam-corner-br"></div>
+
+            <div class="cam-hud-overlay">
+              <span id="camSourceHud">SRC: STANDBY</span>
+              <span id="camServoHud">CAM_SERVO: 090°</span>
+            </div>
+
+            <form id="urlDrawer" class="url-drawer">
+              <label for="streamUrlInput" style="font-size: 11px; color: var(--green-phosphor); font-weight: 700;">
+                ESP32-CAM STREAM URL (MJPEG / HTTP / WEBCAM FALLBACK)
+              </label>
+              <input
+                id="streamUrlInput"
+                class="url-input"
+                type="url"
+                value="http://192.168.4.1:81/stream"
+                placeholder="http://192.168.1.100:81/stream"
+              />
+              <div class="btn-row" style="justify-content: flex-end;">
+                <button type="button" id="btnUrlCancel" class="term-btn">Cancel</button>
+                <button type="submit" class="term-btn active">Connect Stream</button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <!-- Motor & Servo Terminal Monitor -->
+        <section class="terminal-panel terminal-card" aria-label="Rover Motor Terminal">
+          <div class="panel-head">
+            <div class="panel-title">
+              <span id="padDot" class="status-dot"></span>
+              <span id="padStatusLabel">ROVER_TERMINAL</span>
+            </div>
+            <div class="btn-row">
+              <button type="button" id="btnTermPause" class="term-btn">Pause</button>
+              <button type="button" id="btnTermClear" class="term-btn">Clear</button>
+              <button type="button" id="btnBgToggle" class="term-btn active">BG: Dark</button>
+              <button type="button" id="btnResetInputs" class="term-btn">Reset</button>
+            </div>
+          </div>
+
+          <div class="motor-metrics">
+            <div class="metric-cell">
+              <span class="metric-lbl">LEFT_PWM</span>
+              <span id="termLeftPwm" class="metric-num green">+000</span>
+            </div>
+            <div class="metric-cell">
+              <span class="metric-lbl">RIGHT_PWM</span>
+              <span id="termRightPwm" class="metric-num green">+000</span>
+            </div>
+            <div class="metric-cell">
+              <span class="metric-lbl">CAM_SERVO</span>
+              <span id="termServoDeg" class="metric-num">090°</span>
+            </div>
+          </div>
+
+          <div class="terminal-screen">
+            <div id="termLiveLine" class="terminal-live-line">
+              &gt; MOT L:+000 R:+000 | THR:0.00 REV:0.00 STR:+0.00 | SRV:090°
+            </div>
+            <div id="termLog" class="terminal-log" aria-live="off">
+              <div class="log-entry"><span class="ts">[BOOT]</span> ROVER TERMINAL INITIALIZED · READY FOR WASD / XBOX</div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Bottom Row: WASD Keyboard Input (Left) + Xbox Gamepad Telemetry (Right) -->
+      <div class="bottom-row">
+        <section class="terminal-panel wasd-card" aria-label="WASD Keyboard Drive">
+          <div class="panel-head">
+            <div class="panel-title">
+              <span style="color: var(--green-phosphor);">WASD</span>
+              <span>DRIVE</span>
+            </div>
+            <span id="wasdStateText" style="font-size: 10px; color: var(--muted);">IDLE</span>
+          </div>
+
+          <div class="wasd-grid">
+            <div></div>
+            <button type="button" class="keycap" data-key="KeyW" aria-label="Forward W">
+              <span class="keycap-letter">W</span>
+              <span class="keycap-sub">FWD</span>
+            </button>
+            <div></div>
+
+            <button type="button" class="keycap" data-key="KeyA" aria-label="Left A">
+              <span class="keycap-letter">A</span>
+              <span class="keycap-sub">LEFT</span>
+            </button>
+            <button type="button" class="keycap" data-key="KeyS" aria-label="Back S">
+              <span class="keycap-letter">S</span>
+              <span class="keycap-sub">BACK</span>
+            </button>
+            <button type="button" class="keycap" data-key="KeyD" aria-label="Right D">
+              <span class="keycap-letter">D</span>
+              <span class="keycap-sub">RIGHT</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="terminal-panel gamepad-card" aria-label="Xbox Gamepad Input">
+          <div class="panel-head">
+            <div class="panel-title">
+              <span style="color: var(--green-phosphor);">XBOX</span>
+              <span>GAMEPAD</span>
+            </div>
+            <span id="gamepadName" style="font-size: 10px; color: var(--muted);">Waiting for controller input</span>
+          </div>
+
+          <div class="gamepad-deck">
+            <!-- LT (Reverse) & RT (Throttle) -->
+            <div class="triggers-col">
+              <div class="trigger-unit" id="btnLT" role="button" tabindex="0" aria-label="Left Trigger Reverse">
+                <span class="trigger-label">LT</span>
+                <div class="trigger-meter">
+                  <div id="ltFill" class="trigger-fill lt"></div>
+                </div>
+                <span id="ltVal" class="trigger-val">0.00</span>
+                <span class="trigger-tag">REV</span>
+              </div>
+
+              <div class="trigger-unit" id="btnRT" role="button" tabindex="0" aria-label="Right Trigger Throttle">
+                <span class="trigger-label" style="color: var(--green-phosphor);">RT</span>
+                <div class="trigger-meter">
+                  <div id="rtFill" class="trigger-fill rt"></div>
+                </div>
+                <span id="rtVal" class="trigger-val">0.00</span>
+                <span class="trigger-tag">THROT</span>
+              </div>
+            </div>
+
+            <div class="deck-divider"></div>
+
+            <!-- L STICK (Steering) -->
+            <div class="stick-module">
+              <div class="stick-top">
+                <div class="stick-axes-col">
+                  <div class="stick-title">
+                    <span>L STICK</span>
+                    <span style="font-size: 9px; color: var(--muted);">STEER</span>
+                  </div>
+
+                  <div class="axis-row">
+                    <div class="axis-bar-shell">
+                      <div id="axis0Bar" class="axis-bar-fill"></div>
+                    </div>
+                    <div class="axis-readout">
+                      <span class="axis-name">AXIS 0</span>
+                      <span id="axis0Num" class="axis-num">0.00000</span>
+                    </div>
+                  </div>
+
+                  <div class="axis-row">
+                    <div class="axis-bar-shell">
+                      <div id="axis1Bar" class="axis-bar-fill"></div>
+                    </div>
+                    <div class="axis-readout">
+                      <span class="axis-name">AXIS 1</span>
+                      <span id="axis1Num" class="axis-num">0.00000</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div id="lStickReticle" class="stick-reticle" title="Drag to test Left Stick Steering">
+                  <div class="reticle-axis-x"></div>
+                  <div class="reticle-axis-y"></div>
+                  <div id="lStickDot" class="stick-dot"></div>
+                </div>
+              </div>
+
+              <div class="stick-foot">
+                <span>STEER</span>
+                <div class="steer-track">
+                  <div class="steer-center-line"></div>
+                  <div id="lSteerMini" class="steer-indicator"></div>
+                </div>
+                <span id="lSteerPct" style="min-width: 40px; text-align: right; color: var(--green-phosphor); font-weight: 600;">0%</span>
+              </div>
+            </div>
+
+            <div class="deck-divider"></div>
+
+            <!-- D-PAD (Sideways Camera Servo) -->
+            <div class="dpad-module">
+              <div class="dpad-top">
+                <div class="dpad-grid" aria-label="D-Pad Camera Servo Controls">
+                  <button type="button" class="dpad-btn dpad-up" data-dpad="UP" aria-label="D-Pad Up Center Servo">▲</button>
+                  <button type="button" class="dpad-btn dpad-left" data-dpad="LEFT" aria-label="D-Pad Left Pan Servo Left">◀</button>
+                  <button type="button" class="dpad-btn dpad-center" id="btnCenterServo" title="Center Camera Servo to 90°">90°</button>
+                  <button type="button" class="dpad-btn dpad-right" data-dpad="RIGHT" aria-label="D-Pad Right Pan Servo Right">▶</button>
+                  <button type="button" class="dpad-btn dpad-down" data-dpad="DOWN" aria-label="D-Pad Down">▼</button>
+                </div>
+
+                <div class="servo-info">
+                  <span style="font-size: 11px; font-weight: 700; color: var(--green-phosphor);">D-PAD</span>
+                  <span style="font-size: 10px; color: var(--muted);">CAM PAN SERVO</span>
+                  <span id="servoAngleLabel" style="font-size: 16px; font-weight: 700; color: var(--white);">090°</span>
+                  <span style="font-size: 9px; color: var(--dim);">◀ LEFT · ▶ RIGHT</span>
+                </div>
+              </div>
+
+              <div class="stick-foot">
+                <span>0°</span>
+                <div class="steer-track">
+                  <div class="steer-center-line"></div>
+                  <div id="servoBarDot" class="steer-indicator"></div>
+                </div>
+                <span>180°</span>
+              </div>
+            </div>
+
+            <div class="deck-divider"></div>
+
+            <!-- X Y A B Face Buttons -->
+            <div class="abxy-pad" aria-label="Gamepad Face Buttons">
+              <button type="button" class="face-btn" data-btn="Y" aria-label="Y Button">Y</button>
+              <button type="button" class="face-btn" data-btn="X" aria-label="X Button">X</button>
+              <button type="button" class="face-btn" data-btn="B" aria-label="B Button">B</button>
+              <button type="button" class="face-btn" data-btn="A" aria-label="A Button">A</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <script>
+      (() => {
+        const DEADZONE = 0.04;
+        const clamp = (v, min, max) => (v < min ? min : v > max ? max : v);
+        const dz = (v) => (Math.abs(v) < DEADZONE ? 0 : v);
+        const fmtSigned = (n) => (n >= 0 ? `+${String(Math.round(n)).padStart(3, '0')}` : `-${String(Math.abs(Math.round(n))).padStart(3, '0')}`);
+
+        const keyState = { KeyW: false, KeyA: false, KeyS: false, KeyD: false };
+        const virtualKey = { KeyW: false, KeyA: false, KeyS: false, KeyD: false };
+        const virtualBtn = { A: false, B: false, X: false, Y: false, LT: false, RT: false };
+        const virtualDpad = { UP: false, DOWN: false, LEFT: false, RIGHT: false };
+        const virtualL = { x: 0, y: 0, dragging: false };
+
+        let camServoAngle = 90;
+        let termPaused = false;
+        let lastCmdSig = '';
+        let lastLogTime = 0;
+
+        const el = {
+          camViewport: document.getElementById('camViewport'),
+          camVideo: document.getElementById('camVideo'),
+          camImg: document.getElementById('camImg'),
+          camDot: document.getElementById('camDot'),
+          camStatusText: document.getElementById('camStatusText'),
+          camSourceHud: document.getElementById('camSourceHud'),
+          camServoHud: document.getElementById('camServoHud'),
+          btnWebcam: document.getElementById('btnWebcam'),
+          btnCamUrl: document.getElementById('btnCamUrl'),
+          btnCamGrid: document.getElementById('btnCamGrid'),
+          btnCamMirror: document.getElementById('btnCamMirror'),
+          urlDrawer: document.getElementById('urlDrawer'),
+          streamUrlInput: document.getElementById('streamUrlInput'),
+          btnUrlCancel: document.getElementById('btnUrlCancel'),
+
+          padDot: document.getElementById('padDot'),
+          padStatusLabel: document.getElementById('padStatusLabel'),
+          gamepadName: document.getElementById('gamepadName'),
+          btnBgToggle: document.getElementById('btnBgToggle'),
+          btnResetInputs: document.getElementById('btnResetInputs'),
+          btnTermPause: document.getElementById('btnTermPause'),
+          btnTermClear: document.getElementById('btnTermClear'),
+          btnCenterServo: document.getElementById('btnCenterServo'),
+
+          termLeftPwm: document.getElementById('termLeftPwm'),
+          termRightPwm: document.getElementById('termRightPwm'),
+          termServoDeg: document.getElementById('termServoDeg'),
+          termLiveLine: document.getElementById('termLiveLine'),
+          termLog: document.getElementById('termLog'),
+          wasdStateText: document.getElementById('wasdStateText'),
+
+          ltFill: document.getElementById('ltFill'),
+          ltVal: document.getElementById('ltVal'),
+          rtFill: document.getElementById('rtFill'),
+          rtVal: document.getElementById('rtVal'),
+          btnLT: document.getElementById('btnLT'),
+          btnRT: document.getElementById('btnRT'),
+
+          axis0Bar: document.getElementById('axis0Bar'),
+          axis0Num: document.getElementById('axis0Num'),
+          axis1Bar: document.getElementById('axis1Bar'),
+          axis1Num: document.getElementById('axis1Num'),
+          lStickReticle: document.getElementById('lStickReticle'),
+          lStickDot: document.getElementById('lStickDot'),
+          lSteerMini: document.getElementById('lSteerMini'),
+          lSteerPct: document.getElementById('lSteerPct'),
+
+          servoAngleLabel: document.getElementById('servoAngleLabel'),
+          servoBarDot: document.getElementById('servoBarDot'),
+        };
+
+        const appendTermLog = (line) => {
+          if (termPaused) return;
+          const now = new Date();
+          const ts = now.toTimeString().slice(0, 8);
+          const div = document.createElement('div');
+          div.className = 'log-entry';
+          div.innerHTML = `<span class="ts">[${ts}]</span> ${line}`;
+          el.termLog.appendChild(div);
+          while (el.termLog.children.length > 60) {
+            el.termLog.removeChild(el.termLog.firstChild);
+          }
+          el.termLog.scrollTop = el.termLog.scrollHeight;
+        };
+
+        const keyEls = {};
+        document.querySelectorAll('.keycap[data-key]').forEach((node) => {
+          const k = node.getAttribute('data-key');
+          keyEls[k] = node;
+          node.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            virtualKey[k] = true;
+          });
+          const clear = () => (virtualKey[k] = false);
+          node.addEventListener('pointerup', clear);
+          node.addEventListener('pointerleave', clear);
+          node.addEventListener('pointercancel', clear);
+        });
+
+        const faceEls = {};
+        document.querySelectorAll('.face-btn[data-btn]').forEach((node) => {
+          const b = node.getAttribute('data-btn');
+          faceEls[b] = node;
+          node.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            virtualBtn[b] = true;
+          });
+          const clear = () => (virtualBtn[b] = false);
+          node.addEventListener('pointerup', clear);
+          node.addEventListener('pointerleave', clear);
+          node.addEventListener('pointercancel', clear);
+        });
+
+        const dpadEls = {};
+        document.querySelectorAll('.dpad-btn[data-dpad]').forEach((node) => {
+          const d = node.getAttribute('data-dpad');
+          dpadEls[d] = node;
+          node.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            virtualDpad[d] = true;
+          });
+          const clear = () => (virtualDpad[d] = false);
+          node.addEventListener('pointerup', clear);
+          node.addEventListener('pointerleave', clear);
+          node.addEventListener('pointercancel', clear);
+        });
+
+        el.btnCenterServo.addEventListener('click', () => {
+          camServoAngle = 90;
+          appendTermLog('CAM_SERVO CENTERED -> 090°');
+        });
+
+        const bindHold = (node, key) => {
+          node.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            virtualBtn[key] = true;
+          });
+          const clear = () => (virtualBtn[key] = false);
+          node.addEventListener('pointerup', clear);
+          node.addEventListener('pointerleave', clear);
+          node.addEventListener('pointercancel', clear);
+        };
+        bindHold(el.btnLT, 'LT');
+        bindHold(el.btnRT, 'RT');
+
+        // L Stick drag
+        const updateLFromPointer = (clientX, clientY) => {
+          const rect = el.lStickReticle.getBoundingClientRect();
+          const r = rect.width / 2;
+          const dx = (clientX - (rect.left + r)) / r;
+          const dy = (clientY - (rect.top + r)) / r;
+          const mag = Math.hypot(dx, dy);
+          if (mag > 1) {
+            virtualL.x = dx / mag;
+            virtualL.y = dy / mag;
+          } else {
+            virtualL.x = dx;
+            virtualL.y = dy;
+          }
+        };
+
+        el.lStickReticle.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          el.lStickReticle.setPointerCapture(e.pointerId);
+          virtualL.dragging = true;
+          updateLFromPointer(e.clientX, e.clientY);
+        });
+        el.lStickReticle.addEventListener('pointermove', (e) => {
+          if (virtualL.dragging) updateLFromPointer(e.clientX, e.clientY);
+        });
+        const releaseL = () => {
+          virtualL.dragging = false;
+          virtualL.x = 0;
+          virtualL.y = 0;
+        };
+        el.lStickReticle.addEventListener('pointerup', releaseL);
+        el.lStickReticle.addEventListener('pointercancel', releaseL);
+
+        // Keyboard listeners
+        window.addEventListener('keydown', (e) => {
+          if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+          if (e.code in keyState) {
+            e.preventDefault();
+            keyState[e.code] = true;
+          }
+        });
+        window.addEventListener('keyup', (e) => {
+          if (e.code in keyState) keyState[e.code] = false;
+        });
+        window.addEventListener('blur', () => {
+          Object.keys(keyState).forEach((k) => (keyState[k] = false));
+          Object.keys(virtualKey).forEach((k) => (virtualKey[k] = false));
+          Object.keys(virtualBtn).forEach((k) => (virtualBtn[k] = false));
+          Object.keys(virtualDpad).forEach((k) => (virtualDpad[k] = false));
+        });
+
+        // Camera handling (ESP32-CAM MJPEG URL or Webcam)
+        let mediaStream = null;
+        const stopCamera = () => {
+          if (mediaStream) {
+            mediaStream.getTracks().forEach((t) => t.stop());
+            mediaStream = null;
+          }
+          el.camVideo.srcObject = null;
+          el.camVideo.removeAttribute('src');
+          el.camImg.removeAttribute('src');
+          el.camViewport.classList.remove('has-video', 'has-image');
+          el.camDot.classList.remove('on');
+          el.btnWebcam.classList.remove('active');
+          el.btnWebcam.textContent = 'Webcam';
+          el.camSourceHud.textContent = 'SRC: STANDBY';
+        };
+
+        el.btnWebcam.addEventListener('click', async () => {
+          if (mediaStream) {
+            stopCamera();
+            return;
+          }
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            el.camStatusText.textContent = 'WEBCAM UNAVAILABLE IN THIS CONTEXT';
+            return;
+          }
+          try {
+            mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+            el.camImg.removeAttribute('src');
+            el.camVideo.srcObject = mediaStream;
+            el.camViewport.classList.remove('has-image');
+            el.camViewport.classList.add('has-video');
+            el.camDot.classList.add('on');
+            el.btnWebcam.classList.add('active');
+            el.btnWebcam.textContent = 'Stop Cam';
+            el.camSourceHud.textContent = 'SRC: LOCAL WEBCAM';
+            appendTermLog('CAM SOURCE -> LOCAL WEBCAM ACTIVE');
+          } catch {
+            el.camStatusText.textContent = 'CAMERA PERMISSION DENIED OR UNAVAILABLE';
+          }
+        });
+
+        el.btnCamUrl.addEventListener('click', () => {
+          el.urlDrawer.classList.toggle('open');
+          if (el.urlDrawer.classList.contains('open')) el.streamUrlInput.focus();
+        });
+        el.btnUrlCancel.addEventListener('click', () => el.urlDrawer.classList.remove('open'));
+        el.urlDrawer.addEventListener('submit', (e) => {
+          e.preventDefault();
+          const url = el.streamUrlInput.value.trim();
+          if (!url) return;
+          stopCamera();
+          el.urlDrawer.classList.remove('open');
+          const lower = url.toLowerCase();
+          if (lower.endsWith('.mp4') || lower.endsWith('.webm') || lower.endsWith('.ogg')) {
+            el.camVideo.src = url;
+            el.camViewport.classList.add('has-video');
+          } else {
+            el.camImg.src = url;
+            el.camViewport.classList.add('has-image');
+          }
+          el.camDot.classList.add('on');
+          el.camSourceHud.textContent = `SRC: ${url}`;
+          appendTermLog(`ESP32-CAM CONNECTED -> ${url}`);
+        });
+
+        el.btnCamGrid.addEventListener('click', () => {
+          el.camViewport.classList.toggle('show-crosshair');
+          el.btnCamGrid.classList.toggle('active');
+        });
+        el.btnCamMirror.addEventListener('click', () => {
+          el.camViewport.classList.toggle('mirrored');
+          el.btnCamMirror.classList.toggle('active');
+        });
+
+        if (new URLSearchParams(window.location.search).get('bg') === 'clear') {
+          document.body.classList.remove('dark-backdrop');
+          el.btnBgToggle.textContent = 'BG: Clear';
+          el.btnBgToggle.classList.remove('active');
+        }
+
+        el.btnBgToggle.addEventListener('click', () => {
+          const isDark = document.body.classList.toggle('dark-backdrop');
+          el.btnBgToggle.textContent = isDark ? 'BG: Dark' : 'BG: Clear';
+          el.btnBgToggle.classList.toggle('active', isDark);
+        });
+
+        el.btnTermPause.addEventListener('click', () => {
+          termPaused = !termPaused;
+          el.btnTermPause.classList.toggle('active', termPaused);
+          el.btnTermPause.textContent = termPaused ? 'Resume' : 'Pause';
+        });
+
+        el.btnTermClear.addEventListener('click', () => {
+          el.termLog.innerHTML = '';
+        });
+
+        el.btnResetInputs.addEventListener('click', () => {
+          Object.keys(keyState).forEach((k) => (keyState[k] = false));
+          Object.keys(virtualKey).forEach((k) => (virtualKey[k] = false));
+          Object.keys(virtualBtn).forEach((k) => (virtualBtn[k] = false));
+          Object.keys(virtualDpad).forEach((k) => (virtualDpad[k] = false));
+          virtualL.x = 0;
+          virtualL.y = 0;
+          camServoAngle = 90;
+          appendTermLog('SYSTEM RESET -> MOTORS=0 CAM_SERVO=090°');
+        });
+
+        const updateAxisBar = (barEl, val) => {
+          const mag = clamp(Math.abs(val), 0, 1);
+          if (val >= 0) {
+            barEl.style.top = '50%';
+            barEl.style.transformOrigin = 'top center';
+            barEl.style.transform = `scaleY(${mag})`;
+          } else {
+            barEl.style.top = `${50 - mag * 50}%`;
+            barEl.style.transformOrigin = 'bottom center';
+            barEl.style.transform = `scaleY(${mag})`;
+          }
+        };
+
+        let lastFrameTime = performance.now();
+
+        const frame = (now) => {
+          const dt = Math.min(0.05, (now - lastFrameTime) / 1000);
+          lastFrameTime = now;
+
+          const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+          let activePad = null;
+          for (let i = 0; i < pads.length; i++) {
+            if (pads[i] && pads[i].connected) {
+              activePad = pads[i];
+              break;
+            }
+          }
+
+          // WASD
+          const wOn = keyState.KeyW || virtualKey.KeyW;
+          const aOn = keyState.KeyA || virtualKey.KeyA;
+          const sOn = keyState.KeyS || virtualKey.KeyS;
+          const dOn = keyState.KeyD || virtualKey.KeyD;
+
+          keyEls.KeyW.classList.toggle('active-green', wOn);
+          keyEls.KeyA.classList.toggle('active-green', aOn);
+          keyEls.KeyS.classList.toggle('active-white', sOn);
+          keyEls.KeyD.classList.toggle('active-green', dOn);
+
+          const wasdLabels = [];
+          if (wOn) wasdLabels.push('FWD');
+          if (sOn) wasdLabels.push('BACK');
+          if (aOn) wasdLabels.push('LEFT');
+          if (dOn) wasdLabels.push('RIGHT');
+          el.wasdStateText.textContent = wasdLabels.length ? wasdLabels.join('·') : 'IDLE';
+
+          // Gamepad Axes & Triggers
+          const rawAx0 = activePad && activePad.axes.length > 0 ? activePad.axes[0] : 0;
+          const rawAx1 = activePad && activePad.axes.length > 1 ? activePad.axes[1] : 0;
+          const ax0 = virtualL.dragging ? virtualL.x : rawAx0;
+          const ax1 = virtualL.dragging ? virtualL.y : rawAx1;
+
+          const padLT = activePad && activePad.buttons[6] ? activePad.buttons[6].value : 0;
+          const padRT = activePad && activePad.buttons[7] ? activePad.buttons[7].value : 0;
+          const ltVal = virtualBtn.LT ? 1 : padLT;
+          const rtVal = virtualBtn.RT ? 1 : padRT;
+
+          const btnA = virtualBtn.A || Boolean(activePad && activePad.buttons[0] && activePad.buttons[0].pressed);
+          const btnB = virtualBtn.B || Boolean(activePad && activePad.buttons[1] && activePad.buttons[1].pressed);
+          const btnX = virtualBtn.X || Boolean(activePad && activePad.buttons[2] && activePad.buttons[2].pressed);
+          const btnY = virtualBtn.Y || Boolean(activePad && activePad.buttons[3] && activePad.buttons[3].pressed);
+
+          faceEls.A.classList.toggle('active-green', btnA);
+          faceEls.X.classList.toggle('active-green', btnX);
+          faceEls.B.classList.toggle('active-white', btnB);
+          faceEls.Y.classList.toggle('active-white', btnY);
+
+          // D-Pad buttons (standard Xbox mapping: 12=Up, 13=Down, 14=Left, 15=Right)
+          const dUp = virtualDpad.UP || Boolean(activePad && activePad.buttons[12] && activePad.buttons[12].pressed);
+          const dDown = virtualDpad.DOWN || Boolean(activePad && activePad.buttons[13] && activePad.buttons[13].pressed);
+          const dLeft = virtualDpad.LEFT || Boolean(activePad && activePad.buttons[14] && activePad.buttons[14].pressed);
+          const dRight = virtualDpad.RIGHT || Boolean(activePad && activePad.buttons[15] && activePad.buttons[15].pressed);
+
+          dpadEls.UP.classList.toggle('active', dUp);
+          dpadEls.DOWN.classList.toggle('active', dDown);
+          dpadEls.LEFT.classList.toggle('active', dLeft);
+          dpadEls.RIGHT.classList.toggle('active', dRight);
+
+          // Sideways camera servo rotation via D-Pad Left / Right (D-Pad Up centers to 90°)
+          const SERVO_SPEED = 110; // deg/sec
+          if (dLeft) camServoAngle = clamp(camServoAngle - SERVO_SPEED * dt, 0, 180);
+          if (dRight) camServoAngle = clamp(camServoAngle + SERVO_SPEED * dt, 0, 180);
+          if (dUp) camServoAngle = 90;
+
+          const servoDeg = Math.round(camServoAngle);
+          const servoStr = `${String(servoDeg).padStart(3, '0')}°`;
+
+          // Triggers UI
+          el.ltFill.style.transform = `scaleY(${clamp(ltVal, 0, 1)})`;
+          el.ltVal.textContent = ltVal.toFixed(2);
+          el.rtFill.style.transform = `scaleY(${clamp(rtVal, 0, 1)})`;
+          el.rtVal.textContent = rtVal.toFixed(2);
+
+          // L Stick UI
+          el.axis0Num.textContent = ax0.toFixed(5);
+          el.axis1Num.textContent = ax1.toFixed(5);
+          updateAxisBar(el.axis0Bar, ax0);
+          updateAxisBar(el.axis1Bar, ax1);
+
+          const lRad = Math.max(22, el.lStickReticle.clientWidth / 2 - 6);
+          el.lStickDot.style.transform = `translate3d(${(ax0 * lRad).toFixed(1)}px, ${(ax1 * lRad).toFixed(1)}px, 0)`;
+
+          // Rover Differential Motor Drive Mixing (Throttle/Reverse + Steering)
+          const throttle = clamp(Math.max(rtVal, wOn ? 1 : 0), 0, 1);
+          const reverse = clamp(Math.max(ltVal, sOn ? 1 : 0), 0, 1);
+          const netDrive = throttle - reverse;
+          const keySteer = (dOn ? 1 : 0) - (aOn ? 1 : 0);
+          const steer = clamp(dz(ax0) + keySteer, -1, 1);
+
+          const leftMotor = clamp(netDrive + steer, -1, 1);
+          const rightMotor = clamp(netDrive - steer, -1, 1);
+          const leftPwm = Math.round(leftMotor * 255);
+          const rightPwm = Math.round(rightMotor * 255);
+
+          // Steering & Servo visual bars
+          const steerPct = Math.round(steer * 100);
+          const steerLabel = steerPct === 0 ? '0%' : steerPct < 0 ? `L${Math.abs(steerPct)}%` : `R${steerPct}%`;
+          el.lSteerPct.textContent = steerLabel;
+
+          const miniHalf = Math.max(12, (el.lSteerMini.parentElement.clientWidth - 10) / 2);
+          el.lSteerMini.style.transform = `translate3d(${(steer * miniHalf).toFixed(1)}px, 0, 0)`;
+
+          const servoNorm = (camServoAngle - 90) / 90;
+          const servoHalf = Math.max(12, (el.servoBarDot.parentElement.clientWidth - 10) / 2);
+          el.servoBarDot.style.transform = `translate3d(${(servoNorm * servoHalf).toFixed(1)}px, 0, 0)`;
+
+          el.servoAngleLabel.textContent = servoStr;
+          el.termServoDeg.textContent = servoStr;
+          el.camServoHud.textContent = `CAM_SERVO: ${servoStr}`;
+          el.termLeftPwm.textContent = fmtSigned(leftPwm);
+          el.termRightPwm.textContent = fmtSigned(rightPwm);
+
+          const activeBtns = [];
+          if (btnA) activeBtns.push('A');
+          if (btnB) activeBtns.push('B');
+          if (btnX) activeBtns.push('X');
+          if (btnY) activeBtns.push('Y');
+          if (dLeft) activeBtns.push('DPAD_L');
+          if (dRight) activeBtns.push('DPAD_R');
+          if (dUp) activeBtns.push('DPAD_U');
+          if (dDown) activeBtns.push('DPAD_D');
+
+          const liveLine = `MOT L:${fmtSigned(leftPwm)} R:${fmtSigned(rightPwm)} | THR:${throttle.toFixed(2)} REV:${reverse.toFixed(2)} STR:${steer >= 0 ? '+' : ''}${steer.toFixed(2)} | SRV:${servoStr}${activeBtns.length ? ` | BTN:${activeBtns.join(',')}` : ''}`;
+          el.termLiveLine.textContent = `> ${liveLine}`;
+
+          const sig = `${leftPwm}|${rightPwm}|${servoDeg}|${activeBtns.join(',')}`;
+          if (sig !== lastCmdSig && now - lastLogTime > 90) {
+            lastCmdSig = sig;
+            lastLogTime = now;
+            appendTermLog(liveLine);
+          }
+
+          if (activePad) {
+            el.padDot.classList.add('on');
+            el.padStatusLabel.textContent = 'ROVER_TERMINAL · PAD ONLINE';
+            el.gamepadName.textContent = activePad.id.length > 40 ? activePad.id.slice(0, 40) + '…' : activePad.id;
+          } else {
+            el.padDot.classList.remove('on');
+            el.padStatusLabel.textContent = 'ROVER_TERMINAL · READY';
+            el.gamepadName.textContent = 'Keyboard WASD + Clickable Controls Active';
+          }
+
+          requestAnimationFrame(frame);
+        };
+
+        requestAnimationFrame(frame);
+      })();
+    </script>
+  </body>
+</html>
